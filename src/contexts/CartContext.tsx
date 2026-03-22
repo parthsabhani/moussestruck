@@ -21,33 +21,29 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   useEffect(() => {
-    // Load cart from localStorage
     const storedCart = localStorage.getItem('moussestruck_cart');
     if (storedCart) {
-      setCart(JSON.parse(storedCart));
+      try {
+        setCart(JSON.parse(storedCart));
+      } catch {
+        setCart([]);
+      }
     }
   }, []);
 
   useEffect(() => {
-    // Save cart to localStorage whenever it changes
     localStorage.setItem('moussestruck_cart', JSON.stringify(cart));
   }, [cart]);
 
   const addToCart = (product: Product) => {
     setCart((prevCart) => {
-      const existingItem = prevCart.find((item) => item.id === product.id);
-      
-      if (existingItem) {
-        // Update quantity if item already exists
+      const existing = prevCart.find((item) => item.id === product.id);
+      if (existing) {
         return prevCart.map((item) =>
-          item.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+          item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item
         );
-      } else {
-        // Add new item
-        return [...prevCart, { ...product, quantity: 1 }];
       }
+      return [...prevCart, { ...product, quantity: 1 }];
     });
   };
 
@@ -60,37 +56,23 @@ export function CartProvider({ children }: { children: ReactNode }) {
       removeFromCart(productId);
       return;
     }
-    
     setCart((prevCart) =>
-      prevCart.map((item) =>
-        item.id === productId ? { ...item, quantity } : item
-      )
+      prevCart.map((item) => item.id === productId ? { ...item, quantity } : item)
     );
   };
 
-  const clearCart = () => {
-    setCart([]);
-  };
+  const clearCart = () => setCart([]);
 
+  // Use priceValue (numeric) for calculation; fallback to parsing price string
   const cartTotal = cart.reduce((total, item) => {
-    const price = parseFloat(item.price.replace('$', ''));
-    return total + price * item.quantity;
+    const numericPrice = item.priceValue ?? parseFloat(item.price.replace(/[^\d.]/g, ''));
+    return total + numericPrice * item.quantity;
   }, 0);
 
   const cartCount = cart.reduce((count, item) => count + item.quantity, 0);
 
   return (
-    <CartContext.Provider
-      value={{
-        cart,
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        clearCart,
-        cartTotal,
-        cartCount,
-      }}
-    >
+    <CartContext.Provider value={{ cart, addToCart, removeFromCart, updateQuantity, clearCart, cartTotal, cartCount }}>
       {children}
     </CartContext.Provider>
   );
@@ -98,8 +80,6 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
 export function useCart() {
   const context = useContext(CartContext);
-  if (context === undefined) {
-    throw new Error('useCart must be used within a CartProvider');
-  }
+  if (context === undefined) throw new Error('useCart must be used within a CartProvider');
   return context;
 }

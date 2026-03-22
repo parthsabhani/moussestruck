@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShoppingCart, Star } from 'lucide-react';
-import { products, categories } from '../data/siteData';
+import { ShoppingCart, Star, Clock } from 'lucide-react';
+import { products, categories, siteInfo } from '../data/siteData';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,224 +18,142 @@ export function Menu({ onAuthRequired }: MenuProps) {
   const { addToCart } = useCart();
   const { isAuthenticated } = useAuth();
 
+  const now = new Date();
+  const hour = now.getHours();
+  const isWithinOrderHours = hour >= siteInfo.orderHoursStart && hour < siteInfo.orderHoursEnd;
+
   const handleAddToCart = (product: any) => {
-    if (!isAuthenticated) {
-      // Show auth modal if not logged in
-      onAuthRequired();
+    if (!isAuthenticated) { onAuthRequired(); return; }
+    if (!isWithinOrderHours) {
+      setToastMessage(`Orders open ${siteInfo.hours.note}`);
+      setShowToast(true);
       return;
     }
     addToCart(product);
-    
-    // Show toast notification
     setToastMessage(`${product.name} added to cart!`);
     setShowToast(true);
   };
 
   const filteredProducts = selectedCategory === 'all'
     ? products
-    : products.filter(product => product.category === selectedCategory);
+    : products.filter((p) => p.category === selectedCategory);
 
   return (
     <section id="menu" className="py-20 bg-gradient-to-br from-pink-50 via-white to-purple-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, margin: "-100px" }}
-          transition={{ 
-            duration: 0.8,
-            type: "spring",
-            stiffness: 100
-          }}
-          className="text-center mb-12"
-        >
-          <motion.div
-            initial={{ opacity: 0, scale: 0.8 }}
-            whileInView={{ opacity: 1, scale: 1 }}
-            viewport={{ once: true }}
-            transition={{ 
-              delay: 0.2,
-              type: "spring",
-              stiffness: 200
-            }}
-            className="inline-flex items-center gap-2 mb-4 px-4 py-2 bg-pink-100 text-pink-700 rounded-full"
-          >
-            <motion.span
-              animate={{ rotate: [0, 10, -10, 0] }}
-              transition={{
-                duration: 2,
-                repeat: Infinity,
-                ease: "easeInOut"
-              }}
-            >
-              🍮
-            </motion.span>
-            Our Menu
-          </motion.div>
-          <motion.h2 
-            className="text-gray-900 mb-4"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ 
-              delay: 0.3,
-              type: "spring",
-              stiffness: 100
-            }}
-          >
-            Our Delicious Menu
-          </motion.h2>
-          <motion.p 
-            className="text-gray-600 max-w-2xl mx-auto"
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            transition={{ 
-              delay: 0.4,
-              type: "spring",
-              stiffness: 100
-            }}
-          >
-            Each mousse is handcrafted with love and the finest ingredients. Choose your favorite or try them all!
-          </motion.p>
-        </motion.div>
-
-        {/* Category Filter */}
-        <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ 
-            duration: 0.6,
-            delay: 0.2,
-            type: "spring",
-            stiffness: 100
-          }}
-          className="flex flex-wrap justify-center gap-4 mb-12"
+          viewport={{ once: true, margin: '-80px' }}
+          transition={{ duration: 0.5 }}
+          className="text-center mb-10"
         >
-          {categories.map((category, index) => (
-            <motion.button
-              key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ 
-                delay: index * 0.05,
-                type: "spring",
-                stiffness: 200
-              }}
-              whileHover={{ 
-                scale: 1.1,
-                boxShadow: selectedCategory === category.id 
-                  ? "0 10px 30px rgba(236, 72, 153, 0.4)"
-                  : "0 10px 20px rgba(0, 0, 0, 0.1)",
-                transition: { type: "spring", stiffness: 400, damping: 10 }
-              }}
-              whileTap={{ scale: 0.95 }}
-              className={`px-6 py-3 rounded-full transition-all ${
-                selectedCategory === category.id
-                  ? 'bg-pink-600 text-white shadow-lg'
-                  : 'bg-white text-gray-700 hover:bg-pink-100'
-              }`}
-            >
-              <motion.span 
-                className="mr-2"
-                animate={selectedCategory === category.id ? { 
-                  rotate: [0, 10, -10, 0],
-                  scale: [1, 1.2, 1.2, 1]
-                } : {}}
-                transition={{
-                  duration: 0.5
-                }}
-              >
-                {category.emoji}
-              </motion.span>
-              {category.name}
-            </motion.button>
-          ))}
+          <div className="inline-flex items-center gap-2 mb-4 px-4 py-2 bg-pink-100 text-pink-700 rounded-full text-sm font-medium">
+            <span>🍮</span>
+            Our Menu
+          </div>
+          <h2 className="text-gray-900 mb-3">Our Delicious Menu</h2>
+          <p className="text-gray-500 max-w-2xl mx-auto text-sm sm:text-base">
+            Each mousse is handcrafted with love and the finest ingredients. Choose your favourite or try them all!
+          </p>
         </motion.div>
 
+        {/* Hours banner */}
+        <div className={`mb-8 flex items-center justify-center gap-2 px-5 py-3 rounded-2xl text-sm font-medium max-w-sm mx-auto ${
+          isWithinOrderHours
+            ? 'bg-green-50 border border-green-200 text-green-800'
+            : 'bg-amber-50 border border-amber-200 text-amber-800'
+        }`}>
+          <Clock className="w-4 h-4 flex-shrink-0" />
+          <span>
+            {isWithinOrderHours ? '✅ Open for orders now!' : `⏰ Orders: ${siteInfo.hours.note}`}
+          </span>
+        </div>
+
+        {/* Category filter */}
+        <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-10">
+          {categories.map((category) => (
+            <button
+              key={category.id}
+              onClick={() => setSelectedCategory(category.id)}
+              className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-all ${
+                selectedCategory === category.id
+                  ? 'bg-pink-600 text-white shadow-md shadow-pink-200'
+                  : 'bg-white text-gray-700 hover:bg-pink-50 border border-gray-100 shadow-sm'
+              }`}
+            >
+              <span className="mr-1.5">{category.emoji}</span>
+              {category.name}
+            </button>
+          ))}
+        </div>
+
         {/* Products Grid */}
-        <motion.div
-          layout
-          className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
-        >
+        <motion.div layout className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
           <AnimatePresence mode="popLayout">
             {filteredProducts.map((product, index) => (
               <motion.div
                 key={product.id}
                 layout
-                initial={{ opacity: 0, scale: 0.8, y: 50 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.8, y: 50 }}
-                transition={{ 
-                  duration: 0.4,
-                  delay: index * 0.05,
-                  type: "spring",
-                  stiffness: 100,
-                  damping: 15
-                }}
-                whileHover={{ 
-                  y: -12,
-                  transition: { type: "spring", stiffness: 400, damping: 10 }
-                }}
-                className="bg-white rounded-3xl overflow-hidden shadow-lg hover:shadow-2xl transition-all group"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.3, delay: index * 0.04 }}
+                className="bg-white rounded-3xl overflow-hidden shadow-md hover:shadow-xl transition-shadow duration-300 group"
               >
-                {/* Product Image */}
-                <div className="relative h-64 overflow-hidden">
+                <div className="relative h-56 overflow-hidden">
                   <ImageWithFallback
                     src={product.image}
                     alt={product.name}
-                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                   />
-                  
-                  {/* Quick Add Button */}
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    whileHover={{ opacity: 1 }}
-                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <motion.button
+
+                  {/* Hover overlay */}
+                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                    <button
                       onClick={() => handleAddToCart(product)}
-                      whileHover={{ scale: 1.1 }}
-                      whileTap={{ scale: 0.9 }}
-                      className="bg-white text-pink-600 px-6 py-3 rounded-full flex items-center gap-2 shadow-lg transition-all"
+                      className={`px-5 py-2.5 rounded-full flex items-center gap-2 shadow-lg text-sm font-semibold transition-colors ${
+                        isWithinOrderHours && isAuthenticated
+                          ? 'bg-white text-pink-600 hover:bg-pink-600 hover:text-white'
+                          : 'bg-white/80 text-gray-500 cursor-not-allowed'
+                      }`}
                     >
                       <ShoppingCart className="w-4 h-4" />
-                      Add to Cart
-                    </motion.button>
-                  </motion.div>
+                      {!isAuthenticated ? 'Login to Order' : isWithinOrderHours ? 'Add to Cart' : 'Closed Now'}
+                    </button>
+                  </div>
 
-                  {/* Badge */}
                   {product.badge && (
-                    <div className="absolute top-4 right-4 bg-pink-600 text-white px-4 py-2 rounded-full text-sm shadow-lg">
+                    <div className="absolute top-3 right-3 bg-pink-600 text-white px-3 py-1 rounded-full text-xs font-bold shadow">
                       {product.badge}
                     </div>
                   )}
                 </div>
 
-                {/* Product Info */}
-                <div className="p-6">
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="text-gray-900">{product.name}</h3>
-                    <div className="flex items-center gap-1 bg-yellow-50 px-2 py-1 rounded-full">
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span className="text-sm text-gray-700">{product.rating}</span>
+                <div className="p-5">
+                  <div className="flex items-start justify-between mb-1.5">
+                    <h3 className="text-gray-900 font-bold text-base">{product.name}</h3>
+                    <div className="flex items-center gap-0.5 bg-yellow-50 px-2 py-0.5 rounded-full flex-shrink-0 ml-2">
+                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                      <span className="text-xs text-gray-600 font-medium">{product.rating}</span>
                     </div>
                   </div>
-                  
-                  <p className="text-gray-600 text-sm mb-4">{product.description}</p>
-                  
+
+                  <p className="text-gray-500 text-xs mb-4 leading-relaxed">{product.description}</p>
+
                   <div className="flex items-center justify-between">
-                    <span className="text-pink-600">{product.price}</span>
-                    <motion.button
+                    <span className="text-pink-600 font-bold text-lg">{product.price}</span>
+                    <button
                       onClick={() => handleAddToCart(product)}
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      className="bg-pink-100 text-pink-600 px-4 py-2 rounded-full hover:bg-pink-600 hover:text-white transition-colors"
+                      className={`px-4 py-2 rounded-full text-sm font-semibold transition-colors ${
+                        isWithinOrderHours
+                          ? 'bg-pink-100 text-pink-600 hover:bg-pink-600 hover:text-white'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      }`}
+                      title={!isWithinOrderHours ? `Orders open ${siteInfo.hours.note}` : undefined}
                     >
-                      {isAuthenticated ? 'Add to Cart' : 'Login to Order'}
-                    </motion.button>
+                      {!isAuthenticated ? 'Login to Order' : isWithinOrderHours ? 'Add to Cart' : 'Closed'}
+                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -244,10 +162,9 @@ export function Menu({ onAuthRequired }: MenuProps) {
         </motion.div>
       </div>
 
-      {/* Toast Notification */}
       <Toast
         message={toastMessage}
-        type="success"
+        type={toastMessage.includes('added') ? 'success' : 'info'}
         isVisible={showToast}
         onClose={() => setShowToast(false)}
       />

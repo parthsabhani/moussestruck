@@ -1,8 +1,13 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, CreditCard, CheckCircle } from 'lucide-react';
+import { X, ShoppingBag, CheckCircle, Clock, AlertCircle, Loader } from 'lucide-react';
 import { useCart } from '../contexts/CartContext';
 import { useAuth } from '../contexts/AuthContext';
+import { siteInfo } from '../data/siteData';
+import { sendEmail } from '../utils/emailService';
+import { EMAIL_CONFIG } from '../utils/emailConfig';
+import { buildOrderEmail } from '../utils/emailTemplates';
+import { validators } from '../utils/validation';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -15,177 +20,87 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [notes, setNotes] = useState('');
+  const [orderNum, setOrderNum] = useState<number | null>(null);
+  const [sendError, setSendError] = useState('');
 
-  const deliveryFee = 5.00;
-  const total = cartTotal + deliveryFee;
+  const now = new Date();
+  const hour = now.getHours();
+  const isWithinOrderHours = hour >= siteInfo.orderHoursStart && hour < siteInfo.orderHoursEnd;
+
+  const formatIST = (d: Date) =>
+    d.toLocaleString('en-IN', {
+      year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true,
+      timeZone: 'Asia/Kolkata',
+    });
+
+  // Validate user has all required fields before allowing order
+  const missingFields: string[] = [];
+  if (!user?.name) missingFields.push('name');
+  if (!user?.email || validators.email(user.email)) missingFields.push('email');
+  if (!user?.phone || validators.phoneRequired(user.phone)) missingFields.push('phone');
+  if (!user?.address || validators.address(user.address)) missingFields.push('address');
+
+  const canOrder = isWithinOrderHours && cart.length > 0 && missingFields.length === 0;
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsProcessing(true);
+    if (!canOrder || isProcessing) return;
 
-    // Generate order details
+    setIsProcessing(true);
+    setSendError('');
+
     const orderNumber = Math.floor(2000 + Math.random() * 1000);
-    const orderDate = new Date();
-    const orderDateTime = orderDate.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
+    const orderDateTime = formatIST(new Date());
+
+    const html = buildOrderEmail({
+      orderNumber,
+      orderDateTime,
+      customerName:    user!.name,
+      customerEmail:   user!.email,
+      customerPhone:   user!.phone,
+      customerAddress: user!.address,
+      cart,
+      cartTotal,
+      notes: notes.trim() || undefined,
     });
 
-    // Build order items list
-    const orderItems = cart.map(item => 
-      `${item.name} - Qty: ${item.quantity} - ${item.price} each`
-    ).join('\n');
+    // Send to client
+    const clientResult = await sendEmail({
+      to_email:     EMAIL_CONFIG.CLIENT_EMAIL,
+      reply_to:     user!.email,
+      subject:      `🍮 New Order #${orderNumber} — ${user!.name} — ₹${cartTotal.toFixed(0)}`,
+      html_content: html,
+    });
 
-    // Create email
-    const emailSubject = `Order No ${orderNumber} - ${orderDateTime}`;
-    const emailBody = `
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-    .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-    .header { background: linear-gradient(135deg, #ec4899 0%, #a855f7 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
-    .header h1 { margin: 0; font-size: 28px; }
-    .content { background: #ffffff; padding: 30px; border: 2px solid #f3f4f6; border-top: none; border-radius: 0 0 10px 10px; }
-    .order-box { background: #fef3f8; border-left: 4px solid #ec4899; padding: 20px; margin: 20px 0; border-radius: 5px; }
-    .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
-    .detail-row:last-child { border-bottom: none; }
-    .label { font-weight: bold; color: #6b7280; }
-    .value { color: #111827; }
-    .total { background: #ec4899; color: white; padding: 15px; border-radius: 8px; text-align: center; font-size: 20px; font-weight: bold; margin: 20px 0; }
-    .items { background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0; }
-    .item { padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
-    .item:last-child { border-bottom: none; }
-    .footer { text-align: center; padding: 20px; color: #6b7280; font-size: 14px; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <div style="font-size: 24px;">🍮</div>
-      <h1>Moussestruck</h1>
-      <p style="margin: 10px 0 0 0; opacity: 0.9;">Order Confirmation</p>
-    </div>
-    
-    <div class="content">
-      <div class="order-box">
-        <h2 style="color: #ec4899; margin-top: 0;">Order #${orderNumber}</h2>
-        <p style="margin: 5px 0;"><strong>Date & Time:</strong> ${orderDateTime}</p>
-        <p style="margin: 5px 0;"><strong>Status:</strong> <span style="color: #059669;">Confirmed</span></p>
-      </div>
+    // Send confirmation to customer
+    await sendEmail({
+      to_email:     user!.email,
+      reply_to:     EMAIL_CONFIG.CLIENT_EMAIL,
+      subject:      `Your Moussestruck Order #${orderNumber} is Confirmed! 🍮`,
+      html_content: html,
+    });
 
-      <h3 style="color: #111827;">Customer Details</h3>
-      <div class="items">
-        <div class="detail-row">
-          <span class="label">Name:</span>
-          <span class="value">${user?.name}</span>
-        </div>
-        <div class="detail-row">
-          <span class="label">Email:</span>
-          <span class="value">${user?.email}</span>
-        </div>
-        <div class="detail-row">
-          <span class="label">Phone:</span>
-          <span class="value">${user?.phone}</span>
-        </div>
-        <div class="detail-row">
-          <span class="label">Delivery Address:</span>
-          <span class="value">${user?.address}</span>
-        </div>
-      </div>
+    setIsProcessing(false);
 
-      <h3 style="color: #111827;">Order Items</h3>
-      <div class="items">
-        ${cart.map(item => `
-          <div class="item">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-              <strong>${item.name}</strong>
-              <span>${item.price}</span>
-            </div>
-            <div style="color: #6b7280; font-size: 14px;">
-              Quantity: ${item.quantity} | Subtotal: $${(parseFloat(item.price.replace('$', '')) * item.quantity).toFixed(2)}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-
-      ${notes ? `
-        <h3 style="color: #111827;">Special Instructions</h3>
-        <div class="items">
-          <p style="margin: 0;">${notes}</p>
-        </div>
-      ` : ''}
-
-      <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <div class="detail-row">
-          <span class="label">Subtotal:</span>
-          <span class="value">$${cartTotal.toFixed(2)}</span>
-        </div>
-        <div class="detail-row">
-          <span class="label">Delivery Fee:</span>
-          <span class="value">$${deliveryFee.toFixed(2)}</span>
-        </div>
-      </div>
-
-      <div class="total">
-        Total Amount: $${total.toFixed(2)}
-      </div>
-
-      <p style="text-align: center; color: #6b7280; margin: 30px 0;">
-        Thank you for your order! We'll prepare your delicious mousse desserts with love and care.
-      </p>
-
-      <div style="background: #fef3f8; padding: 15px; border-radius: 8px; text-align: center;">
-        <p style="margin: 0; color: #ec4899; font-weight: bold;">📞 Need Help?</p>
-        <p style="margin: 5px 0 0 0; color: #6b7280;">Contact us at: hello@moussestruck.com</p>
-      </div>
-    </div>
-
-    <div class="footer">
-      <p>Made with 💖 by Moussestruck</p>
-      <p>123 Dessert Lane, Sweet City, SC 12345</p>
-    </div>
-  </div>
-</body>
-</html>
-    `.trim();
-
-    // Create mailto link
-    const mailtoLink = `mailto:thatsit120802@gmail.com?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-
-    // Simulate processing
-    setTimeout(() => {
-      setIsProcessing(false);
+    if (clientResult.success) {
+      setOrderNum(orderNumber);
       setIsSuccess(true);
 
-      // Store order in localStorage
+      // Save to local order history
       const orders = JSON.parse(localStorage.getItem('moussestruck_orders') || '[]');
-      orders.push({
-        orderNumber,
-        date: orderDateTime,
-        items: cart,
-        total,
-        customer: user,
-        notes,
-      });
+      orders.push({ orderNumber, date: orderDateTime, items: cart, total: cartTotal, customer: user, notes });
       localStorage.setItem('moussestruck_orders', JSON.stringify(orders));
 
-      // Open email client
-      window.location.href = mailtoLink;
-
-      // Clear cart and close
       setTimeout(() => {
         clearCart();
         setIsSuccess(false);
         setNotes('');
         onClose();
-      }, 3000);
-    }, 2000);
+      }, 4000);
+    } else {
+      setSendError('Could not send your order. Please try again or call us directly at ' + siteInfo.phone);
+    }
   };
 
   return (
@@ -199,120 +114,145 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
           onClick={onClose}
         >
           <motion.div
-            initial={{ scale: 0.9, opacity: 0 }}
+            initial={{ scale: 0.95, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
+            exit={{ scale: 0.95, opacity: 0 }}
+            transition={{ duration: 0.2 }}
             onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl"
+            className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] overflow-y-auto shadow-2xl"
           >
             {!isSuccess ? (
               <>
                 {/* Header */}
-                <div className="sticky top-0 bg-gradient-to-r from-pink-600 to-purple-600 text-white p-6 rounded-t-3xl flex items-center justify-between">
+                <div className="sticky top-0 bg-gradient-to-r from-pink-600 to-purple-600 text-white p-6 rounded-t-3xl flex items-center justify-between z-10">
                   <div className="flex items-center gap-3">
-                    <CreditCard className="w-6 h-6" />
-                    <h3 className="text-white">Checkout</h3>
+                    <ShoppingBag className="w-5 h-5" />
+                    <h3 className="text-white font-semibold">Confirm Order</h3>
                   </div>
-                  <button
-                    onClick={onClose}
-                    className="w-10 h-10 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors"
-                  >
-                    <X className="w-5 h-5" />
+                  <button onClick={onClose} className="w-9 h-9 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center transition-colors">
+                    <X className="w-4 h-4" />
                   </button>
                 </div>
 
-                {/* Content */}
-                <div className="p-6">
-                  {/* Customer Info */}
-                  <div className="bg-gradient-to-br from-pink-50 to-purple-50 rounded-2xl p-6 mb-6">
-                    <h4 className="text-gray-900 mb-4">Delivery Information</h4>
-                    <div className="space-y-2 text-sm">
-                      <p><span className="text-gray-600">Name:</span> <span className="text-gray-900">{user?.name}</span></p>
-                      <p><span className="text-gray-600">Email:</span> <span className="text-gray-900">{user?.email}</span></p>
-                      <p><span className="text-gray-600">Phone:</span> <span className="text-gray-900">{user?.phone}</span></p>
-                      <p><span className="text-gray-600">Address:</span> <span className="text-gray-900">{user?.address}</span></p>
+                <div className="p-6 space-y-5">
+
+                  {/* Hard block: outside hours */}
+                  {!isWithinOrderHours && (
+                    <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+                      <Clock className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-red-800 font-semibold text-sm">Orders are currently closed</p>
+                        <p className="text-red-600 text-sm mt-0.5">
+                          We accept orders <strong>{siteInfo.hours.note}</strong>. Come back during these hours.
+                        </p>
+                      </div>
                     </div>
+                  )}
+
+                  {/* Send error */}
+                  {sendError && (
+                    <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-4">
+                      <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+                      <p className="text-red-700 text-sm">{sendError}</p>
+                    </div>
+                  )}
+
+                  {/* Takeaway notice */}
+                  <div className="flex items-start gap-3 bg-blue-50 border border-blue-100 rounded-xl p-4">
+                    <AlertCircle className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-blue-800">
+                      <strong>Takeaway Only.</strong> Pay ₹{cartTotal.toFixed(0)} at pickup. We'll call you on <strong>{user?.phone}</strong> to confirm timing. A confirmation email will be sent to <strong>{user?.email}</strong>.
+                    </p>
                   </div>
 
-                  {/* Order Summary */}
-                  <div className="mb-6">
-                    <h4 className="text-gray-900 mb-4">Order Summary</h4>
-                    <div className="space-y-3">
+                  {/* Customer info */}
+                  <div className="bg-gradient-to-br from-pink-50 to-purple-50 rounded-2xl p-5">
+                    <h4 className="text-gray-700 font-semibold text-xs uppercase tracking-wider mb-3">Your Details</h4>
+                    <div className="grid sm:grid-cols-2 gap-y-1.5 gap-x-4 text-sm">
+                      <p><span className="text-gray-500">Name:</span> <span className="text-gray-900 font-medium ml-1">{user?.name}</span></p>
+                      <p><span className="text-gray-500">Phone:</span> <span className="text-gray-900 ml-1">{user?.phone}</span></p>
+                      <p className="sm:col-span-2"><span className="text-gray-500">Email:</span> <span className="text-gray-900 ml-1">{user?.email}</span></p>
+                      <p className="sm:col-span-2"><span className="text-gray-500">Address:</span> <span className="text-gray-900 ml-1">{user?.address}</span></p>
+                    </div>
+                    {missingFields.length > 0 && (
+                      <p className="mt-3 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                        ⚠️ Your profile is missing: <strong>{missingFields.join(', ')}</strong>. Please update your account.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Order summary */}
+                  <div>
+                    <h4 className="text-gray-700 font-semibold text-xs uppercase tracking-wider mb-3">Order Summary</h4>
+                    <div className="space-y-2">
                       {cart.map((item) => (
-                        <div key={item.id} className="flex gap-4 pb-3 border-b border-gray-200">
-                          <div className="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0">
-                            <img
-                              src={item.image}
-                              alt={item.name}
-                              className="w-full h-full object-cover"
-                            />
+                        <div key={item.id} className="flex gap-3 items-center">
+                          <div className="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0">
+                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
                           </div>
-                          <div className="flex-1">
-                            <h5 className="text-gray-900 text-sm">{item.name}</h5>
-                            <p className="text-gray-600 text-sm">Qty: {item.quantity}</p>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-gray-900 text-sm font-semibold truncate">{item.name}</p>
+                            <p className="text-gray-500 text-xs">Qty: {item.quantity} × {item.price}</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-gray-900">${(parseFloat(item.price.replace('$', '')) * item.quantity).toFixed(2)}</p>
-                          </div>
+                          <span className="text-gray-900 font-semibold text-sm flex-shrink-0">
+                            ₹{(item.priceValue * item.quantity).toFixed(0)}
+                          </span>
                         </div>
                       ))}
                     </div>
-
-                    <div className="mt-4 space-y-2">
-                      <div className="flex justify-between text-gray-600">
-                        <span>Subtotal</span>
-                        <span>${cartTotal.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-600">
-                        <span>Delivery Fee</span>
-                        <span>${deliveryFee.toFixed(2)}</span>
-                      </div>
-                      <div className="flex justify-between text-gray-900 pt-2 border-t border-gray-200">
-                        <span>Total</span>
-                        <span className="text-pink-600">${total.toFixed(2)}</span>
-                      </div>
+                    <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
+                      <span className="text-gray-900 font-semibold">Total (Pay at Pickup)</span>
+                      <span className="text-pink-600 text-xl font-bold">₹{cartTotal.toFixed(0)}</span>
                     </div>
                   </div>
 
-                  {/* Special Instructions */}
-                  <form onSubmit={handlePlaceOrder} className="space-y-6">
+                  <form onSubmit={handlePlaceOrder} className="space-y-4">
                     <div>
-                      <label htmlFor="notes" className="block text-gray-700 mb-2">
-                        Special Instructions (Optional)
+                      <label htmlFor="notes" className="block text-gray-700 text-sm font-medium mb-2">
+                        Special Instructions <span className="text-gray-400 font-normal">(Optional)</span>
                       </label>
                       <textarea
-                        id="notes"
-                        value={notes}
+                        id="notes" value={notes}
                         onChange={(e) => setNotes(e.target.value)}
                         rows={3}
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-600 focus:border-transparent transition-all resize-none"
-                        placeholder="Any special requests or dietary requirements..."
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-transparent transition-all resize-none text-sm bg-gray-50 focus:bg-white"
+                        placeholder="Allergies, flavour preferences, gift notes..."
+                        disabled={!canOrder}
                       />
                     </div>
 
-                    <motion.button
-                      type="submit"
-                      disabled={isProcessing}
-                      whileHover={{ scale: isProcessing ? 1 : 1.02 }}
-                      whileTap={{ scale: isProcessing ? 1 : 0.98 }}
-                      className={`w-full py-4 rounded-xl transition-all flex items-center justify-center gap-3 ${
-                        isProcessing
-                          ? 'bg-gray-400 cursor-not-allowed'
-                          : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700'
-                      } text-white shadow-lg`}
-                    >
-                      {isProcessing ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                          <span>Processing Order...</span>
-                        </>
-                      ) : (
-                        <>
-                          <CreditCard className="w-5 h-5" />
-                          <span>Place Order - ${total.toFixed(2)}</span>
-                        </>
-                      )}
-                    </motion.button>
+                    {canOrder ? (
+                      <>
+                        <button
+                          type="submit"
+                          disabled={isProcessing}
+                          className={`w-full py-4 rounded-xl transition-all flex items-center justify-center gap-2 font-semibold ${
+                            isProcessing
+                              ? 'bg-gray-300 cursor-not-allowed text-gray-500'
+                              : 'bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 text-white shadow-md'
+                          }`}
+                        >
+                          {isProcessing ? (
+                            <><Loader className="w-4 h-4 animate-spin" /><span>Placing Order...</span></>
+                          ) : (
+                            <><ShoppingBag className="w-4 h-4" /><span>Confirm Order — ₹{cartTotal.toFixed(0)}</span></>
+                          )}
+                        </button>
+                        <p className="text-center text-xs text-gray-400">
+                          Confirmation will be emailed to {user?.email}
+                        </p>
+                      </>
+                    ) : (
+                      <div className="bg-gray-100 rounded-xl p-4 text-center">
+                        <p className="text-gray-500 text-sm font-medium">
+                          {!isWithinOrderHours
+                            ? `Ordering unavailable · Come back ${siteInfo.hours.note}`
+                            : cart.length === 0
+                            ? 'Your cart is empty'
+                            : 'Please complete your profile details to order'}
+                        </p>
+                      </div>
+                    )}
                   </form>
                 </div>
               </>
@@ -321,23 +261,22 @@ export function CheckoutModal({ isOpen, onClose }: CheckoutModalProps) {
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
-                  transition={{ type: "spring", duration: 0.6 }}
-                  className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6"
+                  transition={{ type: 'spring', duration: 0.5 }}
+                  className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-5"
                 >
-                  <CheckCircle className="w-12 h-12 text-green-600" />
+                  <CheckCircle className="w-10 h-10 text-green-500" />
                 </motion.div>
-                <h3 className="text-gray-900 mb-3">Order Placed Successfully!</h3>
-                <p className="text-gray-600 mb-4">
-                  Thank you for your order! Check your email for confirmation details.
+                <h3 className="text-gray-900 font-bold mb-2 text-xl">Order Placed! 🎉</h3>
+                {orderNum && <p className="text-pink-600 font-semibold text-sm mb-2">Order #{orderNum}</p>}
+                <p className="text-gray-500 text-sm mb-1">
+                  Confirmation sent to <strong>{user?.email}</strong>
                 </p>
-                <div className="flex gap-2 justify-center text-3xl">
+                <p className="text-gray-400 text-xs">
+                  Our team will call you at <strong>{user?.phone}</strong> to arrange pickup.
+                </p>
+                <div className="flex gap-1.5 justify-center text-2xl mt-5">
                   {['🎉', '🍮', '💖', '✨'].map((emoji, i) => (
-                    <motion.span
-                      key={i}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                    >
+                    <motion.span key={i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
                       {emoji}
                     </motion.span>
                   ))}
