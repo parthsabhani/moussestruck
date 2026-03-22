@@ -55,7 +55,8 @@
             "vite": "6.3.5"
       },
       "scripts": {
-            "dev": "vite",
-            "build": "npx vite build"
-      }
+  "dev": "vite",
+  "build": "vite build",
+  "postinstall": "chmod +x node_modules/.bin/vite"
+}
 }
